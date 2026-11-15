@@ -1,5 +1,6 @@
 import Fastify, { type FastifyError, type FastifyInstance, LogController } from 'fastify';
 import type { TokenVerifier } from './auth.js';
+import { balanceSchema, creditSchema, debitSchema, healthSchema, isDocsRoute, registerDocs } from './docs.js';
 import { ApiError, type ErrorBody, invalidRequest, unauthorized } from './errors.js';
 import { parseJson } from './json.js';
 import { parseMovement, parseUserId } from './validation.js';
@@ -9,6 +10,8 @@ export interface AppDependencies {
   readonly verifyToken: TokenVerifier;
   readonly wallet: Wallet;
   readonly logLevel?: string;
+  /** Serve Swagger UI at /docs (off by default: every endpoint must require the token). */
+  readonly enableDocs?: boolean;
 }
 
 interface BalanceResponse {
@@ -21,7 +24,7 @@ const MAX_BODY_BYTES = 16 * 1024;
 const internalError: ErrorBody = { error: 'internal_error', message: 'Internal server error' };
 
 /** Builds the HTTP app. Kept free of process/env concerns so tests can inject fakes. */
-export function buildApp({ verifyToken, wallet, logLevel = 'info' }: AppDependencies): FastifyInstance {
+export function buildApp({ verifyToken, wallet, logLevel = 'info', enableDocs = false }: AppDependencies): FastifyInstance {
   const app = Fastify({
     logger: {
       level: logLevel,
@@ -36,8 +39,12 @@ export function buildApp({ verifyToken, wallet, logLevel = 'info' }: AppDependen
   });
 
   // 1. Authentication runs in onRequest: before the body is read and before
-  //    any database access, so a bad token always gets 401.
+  //    any database access, so a bad token always gets 401. The only
+  //    exception is the Swagger UI pages, and only when docs are enabled.
+  //    routeOptions.url is the matched route PATTERN (e.g. "/docs/static/*"),
+  //    not the raw URL, so path tricks like "/docs/../credit" cannot bypass it.
   app.addHook('onRequest', async (request) => {
+    if (enableDocs && isDocsRoute(request.routeOptions.url)) return;
     if (!verifyToken(request.headers.authorization)) throw unauthorized();
   });
 
@@ -70,27 +77,42 @@ export function buildApp({ verifyToken, wallet, logLevel = 'info' }: AppDependen
     reply.code(404).send({ error: 'not_found', message: 'Route not found' } satisfies ErrorBody),
   );
 
-  app.post('/credit', async (request): Promise<BalanceResponse> => {
-    const { userId, amount } = parseMovement(request.body);
-    const balance = await wallet.credit(userId, amount);
-    return { user_id: userId, balance };
-  });
+  // 4. Route schemas are documentation only (see docs.ts): Fastify's own
+  //    validator would coerce "100" into 100, so it is switched off and
+  //    validation.ts stays the single source of truth for input rules.
+  app.setValidatorCompiler(() => () => true);
 
-  app.post('/debit', async (request): Promise<BalanceResponse> => {
-    const { userId, amount } = parseMovement(request.body);
-    const balance = await wallet.debit(userId, amount);
-    return { user_id: userId, balance };
-  });
+  // 5. Swagger must be registered before the routes so it can see them;
+  //    plugins load in registration order.
+  if (enableDocs) registerDocs(app);
 
-  app.get<{ Params: { user_id: string } }>('/balance/:user_id', async (request): Promise<BalanceResponse> => {
-    const userId = parseUserId(request.params.user_id);
-    const balance = await wallet.getBalance(userId);
-    return { user_id: userId, balance };
-  });
+  app.register(async (routes) => {
+    routes.post('/credit', { schema: creditSchema }, async (request): Promise<BalanceResponse> => {
+      const { userId, amount } = parseMovement(request.body);
+      const balance = await wallet.credit(userId, amount);
+      return { user_id: userId, balance };
+    });
 
-  app.get('/health', async () => {
-    await wallet.checkHealth();
-    return { status: 'ok' };
+    routes.post('/debit', { schema: debitSchema }, async (request): Promise<BalanceResponse> => {
+      const { userId, amount } = parseMovement(request.body);
+      const balance = await wallet.debit(userId, amount);
+      return { user_id: userId, balance };
+    });
+
+    routes.get<{ Params: { user_id: string } }>(
+      '/balance/:user_id',
+      { schema: balanceSchema },
+      async (request): Promise<BalanceResponse> => {
+        const userId = parseUserId(request.params.user_id);
+        const balance = await wallet.getBalance(userId);
+        return { user_id: userId, balance };
+      },
+    );
+
+    routes.get('/health', { schema: healthSchema }, async () => {
+      await wallet.checkHealth();
+      return { status: 'ok' };
+    });
   });
 
   return app;

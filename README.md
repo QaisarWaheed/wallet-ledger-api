@@ -54,11 +54,30 @@ docker compose down -v
 - The database is published on `127.0.0.1:55432` (change it with `DB_HOST_PORT`) for tests and SQL checks.
   It uses an uncommon port so it can't clash with a PostgreSQL already running on 5432.
 
+### Swagger UI (optional)
+
+```bash
+ENABLE_DOCS=true docker compose up -d --build     # PowerShell: $env:ENABLE_DOCS="true"; docker compose up -d --build
+```
+
+Open <http://localhost:8080/docs>, click **Authorize**, enter the token (`recruitment-test-token`),
+then use **Execute** on any endpoint. The raw OpenAPI document is at `/docs/json`.
+
+- **Off by default.** The brief requires the bearer token on every endpoint, and a browser can't send
+  one just to open a page. With docs off, `/docs` gets 401 like everything else. A plain
+  `docker compose up` turns it back off.
+- **When on, only the docs pages are public.** Every API call made from Swagger still needs the token.
+  The exemption matches Fastify's matched route pattern, not the raw URL, so tricks like
+  `/docs/../credit` can't get around it.
+- **The schemas are documentation only.** Fastify's built-in validator converts types (it would accept
+  `"100"` as `100`), so it's switched off. Input rules stay in [`validation.ts`](src/validation.ts),
+  and a test proves the schemas don't weaken them.
+
 ### Tests
 
 ```bash
 npm ci
-npm run test:unit          # 155 tests, no database needed (~3 s)
+npm run test:unit          # 165 tests, no database needed (~3 s)
 npm run test:integration   # 18 tests against the running stack (~10 s)
 ```
 
@@ -90,6 +109,7 @@ docker compose --profile loadtest run --rm loadtest --scenario hot     # 50 clie
 | `POST /debit` | `{"user_id": "u123", "amount": 4000}` | `200 {"user_id", "balance"}` | 400, 401, 404, 409 |
 | `GET /balance/{user_id}` | none | `200 {"user_id", "balance"}` | 400, 401, 404 |
 | `GET /health` (extra) | none | `200 {"status": "ok"}` | 401, 500 |
+| `GET /docs` (extra, off by default) | none | Swagger UI | — |
 
 Errors are always `{"error": "<code>", "message": "<text>"}`. Unknown routes return
 `404 {"error": "not_found"}`, after the auth check.
@@ -115,6 +135,7 @@ request
 |---|---|
 | [`src/server.ts`](src/server.ts) | Process wiring: worker processes, DB pool, graceful shutdown |
 | [`src/app.ts`](src/app.ts) | HTTP layer: auth hook, JSON parser, routes, error mapping |
+| [`src/docs.ts`](src/docs.ts) | OpenAPI description and the optional Swagger UI |
 | [`src/auth.ts`](src/auth.ts) | Constant-time bearer token check |
 | [`src/json.ts`](src/json.ts) | JSON parsing that rejects decimals written as `1.0` |
 | [`src/validation.ts`](src/validation.ts) | Input rules |
@@ -462,5 +483,3 @@ Total: about 10,600 requests/s. Latency is the same at 1M and 10M rows.
 - Metrics: latency histograms, pool wait time, batch sizes, lock waits.
 - Run the load generator on a separate machine, and the database on dedicated hardware.
 - Partition the ledger by time.
-#   w a l l e t - l e d g e r - a p i  
- 

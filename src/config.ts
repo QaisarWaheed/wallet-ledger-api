@@ -12,6 +12,8 @@ export interface Config {
   /** Number of API worker processes (Node runs JavaScript on one core per process). */
   readonly workers: number;
   readonly logLevel: string;
+  /** Serve Swagger UI at /docs. */
+  readonly enableDocs: boolean;
 }
 
 type Env = Record<string, string | undefined>;
@@ -43,5 +45,6 @@ export function loadConfig(env: Env = process.env): Config {
     dbPoolSize: positiveInt(env, 'DB_POOL_SIZE', 16),
     workers: positiveInt(env, 'WEB_CONCURRENCY', Math.min(4, availableParallelism())),
     logLevel: env['LOG_LEVEL'] ?? 'info',
+    enableDocs: env['ENABLE_DOCS'] === 'true',
   };
 }

@@ -52,6 +52,9 @@ services:
       WEB_CONCURRENCY: "4"
       DB_POOL_SIZE: "16"
       LOG_LEVEL: warn
+      # Swagger UI at http://localhost:8080/docs. Off by default because the
+      # brief requires the token on every endpoint: ENABLE_DOCS=true docker compose up
+      ENABLE_DOCS: ${ENABLE_DOCS:-false}
       PORT: "8080"
     ports:
       - "8080:8080"

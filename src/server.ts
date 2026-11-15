@@ -61,6 +61,7 @@ async function startWorker(config: Config): Promise<void> {
     verifyToken: createTokenVerifier(config.apiToken),
     wallet: new WalletService(new PostgresLedgerStore(pool)),
     logLevel: config.logLevel,
+    enableDocs: config.enableDocs,
   });
 
   // An idle client can error (e.g. database restart); log it instead of crashing.

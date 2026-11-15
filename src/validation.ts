@@ -3,7 +3,7 @@ import { invalidRequest } from './errors.js';
 export const MIN_AMOUNT = 1;
 export const MAX_AMOUNT = 1_000_000_000;
 
-const USER_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
+export const USER_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 
 /** A validated credit or debit request. */
 export interface MovementRequest {
