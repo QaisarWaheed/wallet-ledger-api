@@ -1,0 +1,3 @@
+# Keep LF everywhere: SQL and config files are mounted into Linux containers,
+# and reviewers may clone on any OS.
+* text=auto eol=lf
